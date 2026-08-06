@@ -1,7 +1,7 @@
 
-# ComEMR WhatsApp Support Bot
+# SPICE WhatsApp Support Bot
 
-AI Powered WhatsApp chatbot for **ComEMR Support** built using **FastAPI**, **WhatsApp Cloud API**, and **OpenAI**.  
+AI Powered WhatsApp chatbot for **SPICE Support** built using **FastAPI**, **WhatsApp Cloud API**, and **OpenAI**.  
 It uses Retrieval-Augmented Generation (RAG) for context-aware answers and sanitizes responses to avoid leaking internal KB details.
 
 ---
@@ -59,7 +59,7 @@ Create a `.env` file in the root:
 ```
 WHATSAPP_PHONE_ID=<your-phone-id>
 META_WHATSAPP_TOKEN=<your-meta-token>
-META_VERIFY_TOKEN=ComEMR1234
+META_VERIFY_TOKEN=SPICE1234
 OPENAI_API_KEY=<your-openai-key>
 KB_DIR=KB
 TOP_K=3

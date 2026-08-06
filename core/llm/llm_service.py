@@ -13,10 +13,9 @@ class LLMService:
     def generate_response(self, user_message: str, faiss_docs: list, language: str | None = None):
         context = "\n".join([d["text"] for d in faiss_docs])
         lang_instruction = ""
-        if language == 'krio':
+        if language == 'bn':
             lang_instruction = (
-                "\nNote: User requested Krio. Reply mainly in English but include short Krio phrases sparingly. "
-                "Keep critical guidance in English for clarity."
+                "\nNote: Reply fully in natural, simple Bangla (Bengali script) suitable for low-literacy users."
             )
         prompt = f"""
 You are a helpful assistant.
@@ -33,6 +32,7 @@ Answer concisely and clearly.
                 temperature=self.temperature,
                 max_tokens=settings.LLM_MAX_TOKENS,
                 system_prompt="You are a helpful assistant. Respond naturally, clearly, and safely.",
+                language=language,
             )
             logger.info(f"LLM generated response | len={len(answer)}")
             return answer

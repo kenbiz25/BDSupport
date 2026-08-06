@@ -4,7 +4,7 @@ from rag.composer import RagComposer
 class DummyChat:
     def __init__(self):
         self.calls = []
-    def __call__(self, prompt, *, model=None, temperature=None, max_tokens=None):
+    def __call__(self, prompt, *, model=None, temperature=None, max_tokens=None, system_prompt=None, language=None):
         self.calls.append({'prompt': prompt, 'model': model, 'temperature': temperature, 'max_tokens': max_tokens})
         return 'Short answer.'
 

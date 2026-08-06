@@ -26,7 +26,7 @@ Thumbs.db
 # Ngrok session files
 *.ngrok.loglogs/
 core/memory/sessions/
-ComEMRSupport/
+SPICESupport/
 logs/
 
 # Ticket files (stored in OneDrive, not in repo)

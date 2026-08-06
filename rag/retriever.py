@@ -1,5 +1,5 @@
 # rag/retriever.py
-# ComEMR Knowledge Retriever – Production Scale
+# SPICE Knowledge Retriever – Production Scale
 
 from typing import List, Dict, Any, Optional  # ✅ Added Optional
 import logging

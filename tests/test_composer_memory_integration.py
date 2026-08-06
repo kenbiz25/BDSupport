@@ -5,8 +5,9 @@ def test_composer_includes_memory_in_prompt(monkeypatch):
     # Prepare composer
     composer = RagComposer()
 
-    # Fake VectorMemory.get_similar to return a clear memory
-    def fake_get_similar(session_id, query, top_k=3):
+    # Fake VectorMemory.get_similar to return a clear memory.
+    # Patched on the class, so it's accessed as a bound method (self first) at call time.
+    def fake_get_similar(self, session_id, query, top_k=3):
         return [{"text": "Patient: high fever yesterday", "score": 0.9, "role": "user", "ts": "ts1"}]
 
     monkeypatch.setattr("core.memory.vector_memory.VectorMemory.get_similar", fake_get_similar)

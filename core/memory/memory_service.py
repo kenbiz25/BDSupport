@@ -30,7 +30,10 @@ class ConversationMemory:
                 if getattr(settings, "ENABLE_VECTOR_MEMORY", False):
                     try:
                         from core.memory.vector_memory import VectorMemory
-                        vec = VectorMemory(base_dir=self.base_dir)
+                        # Separate subdirectory: VectorMemory uses the same {session_id}.jsonl
+                        # naming scheme, and sharing self.base_dir would make it append
+                        # embedding-laden duplicate lines into this class's own session file.
+                        vec = VectorMemory(base_dir=os.path.join(self.base_dir, "_vectors"))
                         vec.add_entry(session_id, text=text, role=role, ts=entry["ts"])
                     except Exception:
                         logger.exception("Failed to add to vector memory")

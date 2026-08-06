@@ -9,6 +9,8 @@ class DummyResponse:
     def raise_for_status(self):
         if self.status_code >= 400:
             raise httpx.HTTPStatusError('error', request=None, response=self)
+    def json(self):
+        return {"messages": [{"id": "wamid.test123"}]}
 
 
 def test_send_retries_and_succeeds(monkeypatch):

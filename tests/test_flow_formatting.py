@@ -4,7 +4,8 @@ from rag.flow import BotFlow
 
 def test_remove_asterisks_and_clean():
     bf = BotFlow(None, None, None)
-    text = "Hello! *Please* follow these steps:\n1. Do this\n2. Do that"
+    # 3+ items so the short-list-flattening branch (<=2 items) doesn't collapse this into one sentence.
+    text = "Hello! *Please* follow these steps:\n1. Do this\n2. Do that\n3. Do the other thing"
     out = bf._format_outgoing(text)
     assert "*" not in out
     assert "1. Do this" in out

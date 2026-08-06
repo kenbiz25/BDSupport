@@ -51,7 +51,7 @@ except Exception:
 
 # -------- System Prompt --------
 def _load_system_prompt() -> str:
-    brand = os.getenv("COMEMR_BRAND_NAME", getattr(settings, "COMEMR_BRAND_NAME", "ComEMR Support"))
+    brand = os.getenv("SPICE_BRAND_NAME", getattr(settings, "SPICE_BRAND_NAME", "SPICE Support"))
     try:
         base = pathlib.Path("prompts") / "system.txt"
         if base.exists():
@@ -155,7 +155,7 @@ def _image_to_text(image_path: str) -> str:
 # -------- Micro-Templates for common procedures --------
 MICRO_TEMPLATES = {
     "reset password": [
-        "1. Open the ComEMR app and tap 'Forgot Password'.",
+        "1. Open the SPICE app and tap 'Forgot Password'.",
         "2. Enter your registered phone number and submit.",
         "3. You will receive an SMS with a secure link.",
         "4. Open the link and set a new password.",
@@ -177,7 +177,7 @@ def _match_micro_template(query: str) -> Optional[List[str]]:
 # Important: Use grouping to avoid regex precedence bugs.
 _GREETING_RE = re.compile(r"\b(hello|hi|hey|good morning|good afternoon|good evening)\b", re.IGNORECASE)
 _PROCEDURAL_RE = re.compile(r"\b(how to|steps?|procedure|guide|reset|install|update)\b", re.IGNORECASE)
-_META_RE = re.compile(r"\b(are you a bot|are you a robot|can i ask you|outside comemr|other things)\b", re.IGNORECASE)
+_META_RE = re.compile(r"\b(are you a bot|are you a robot|can i ask you|outside spice|other things)\b", re.IGNORECASE)
 _FAQ_RE = re.compile(r"\b(what|who|when|where|why)\b", re.IGNORECASE)
 
 
@@ -231,7 +231,7 @@ class RagComposer:
         self.safeguard = safeguard
         self.retriever = Retriever(top_k=self.top_k)
         self.system_prompt = _load_system_prompt()
-        self.brand = os.getenv("COMEMR_BRAND_NAME", "ComEMR Support")
+        self.brand = os.getenv("SPICE_BRAND_NAME", "SPICE Support")
 
         # If true, do NOT return a "reset-like" greeting response.
         self.suppress_hard_greeting = True
@@ -248,7 +248,7 @@ class RagComposer:
         """
         Produce an answer and return meta including confidence, citations, and detected intent.
 
-        language: 'en' (default) or 'krio' to indicate user requested Krio mixing.
+        language: 'en' (default) or 'bn' to reply fully in Bangla (Bengali).
         session_id: optional session identifier used to fetch conversation memory summaries.
         """
         query = (query or "").strip()
@@ -298,19 +298,32 @@ class RagComposer:
         if intent == "greeting":
             if self.suppress_hard_greeting:
                 # Forward-moving prompt (WhatsApp-friendly)
-                msg = f"Hi! How can I help you with ComEMR today? (You can type 'menu' to see options.)"
+                if language == "bn":
+                    msg = "হ্যালো! আজ SPICE নিয়ে আপনাকে কীভাবে সাহায্য করতে পারি? (অপশন দেখতে 'menu' লিখুন।)"
+                else:
+                    msg = "Hi! How can I help you with SPICE today? (You can type 'menu' to see options.)"
                 return msg, {"confidence": 1.0, "citations": [], "guarded": False, "intent": intent, "low_confidence": False}
             else:
-                return f"Hello! I’m {self.brand}. How can I assist you today?", {
+                if language == "bn":
+                    msg = f"হ্যালো! আমি {self.brand}। আজ আপনাকে কীভাবে সাহায্য করতে পারি?"
+                else:
+                    msg = f"Hello! I’m {self.brand}. How can I assist you today?"
+                return msg, {
                     "confidence": 1.0, "citations": [], "guarded": False, "intent": intent, "low_confidence": False
                 }
 
         # Meta intent: short direct answers
         if intent == "meta":
-            meta_ans = (
-                f"I’m a virtual assistant for {self.brand}. I can help with ComEMR support — troubleshooting, how-tos, and guidance. "
-                "Tell me what you’re trying to do or what error you see."
-            )
+            if language == "bn":
+                meta_ans = (
+                    f"আমি {self.brand}-এর একজন ভার্চুয়াল সহকারী। সমস্যা সমাধান, ব্যবহারের ধাপ এবং সাহায্যের জন্য আমি এখানে আছি। "
+                    "আপনি কী করতে চাচ্ছেন বা কী সমস্যা দেখছেন বলুন।"
+                )
+            else:
+                meta_ans = (
+                    f"I’m a virtual assistant for {self.brand}. I can help with SPICE support — troubleshooting, how-tos, and guidance. "
+                    "Tell me what you’re trying to do or what error you see."
+                )
             return meta_ans, {"confidence": 1.0, "citations": [], "guarded": False, "intent": intent, "low_confidence": False}
 
         # 5️⃣ KB retrieval
@@ -337,8 +350,12 @@ class RagComposer:
 
         # If absolutely no context and query is short/ambiguous, guide instead of hallucinating.
         if low_confidence and len(query) < 10:
+            if language == "bn":
+                guide_msg = "আমি সাহায্য করতে পারি। এক লাইনে সমস্যাটি লিখুন (যেমন: লগইন এরর, সিঙ্ক না হওয়া, ডিভাইস সমস্যা), বা 'menu' লিখুন।"
+            else:
+                guide_msg = "I can help. Please describe the issue in one sentence (e.g., login error, sync failing, device problem), or type 'menu'."
             return (
-                "I can help. Please describe the issue in one sentence (e.g., login error, sync failing, device problem), or type 'menu'.",
+                guide_msg,
                 {"confidence": 0.0, "citations": [], "guarded": False, "intent": intent, "low_confidence": True}
             )
 
@@ -387,12 +404,12 @@ class RagComposer:
 
         memory_section = ("Relevant memory:\n" + "\n".join(memory_texts) + "\n\n") if memory_texts else ""
 
-        # Krio mixing instruction
+        # Bangla instruction — full reply in Bangla, enforced again at the chat_complete layer
         lang_instruction = ""
-        if language == "krio":
+        if language == "bn":
             lang_instruction = (
-                "\nNote: The user requested Krio. Reply mostly in English but include Krio so that roughly 40% of the reply is in Krio (by sentence count) and 60% in English. "
-                "Keep critical guidance primarily in English to ensure clarity; use Krio for friendly phrasing or short clarifying sentences."
+                "\nNote: Reply fully in natural, simple Bangla (Bengali script) suitable for low-literacy users. "
+                "Keep sentences short and steps simple; you may keep app names or error codes in English."
             )
 
         prompt = f"""
@@ -427,6 +444,7 @@ Instructions:
                 temperature=getattr(settings, "LLM_TEMPERATURE", 0.2),
                 max_tokens=getattr(settings, "LLM_MAX_TOKENS", 450),
                 system_prompt=self.system_prompt,
+                language=language,
             )
             return (answer or "").strip()
         except Exception:

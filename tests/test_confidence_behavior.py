@@ -1,4 +1,16 @@
+import pytest
 from rag.flow import BotFlow
+from config.settings import settings
+
+
+@pytest.fixture(autouse=True)
+def _disable_conversation_memory(monkeypatch):
+    # These tests use fixed session ids against the real (non-tmp) ConversationMemory
+    # directory. With memory on, the first-touch menu and the "don't repeat the
+    # clarify question" history check both key off accumulated real history, making
+    # results depend on what earlier test runs happened to leave on disk — unrelated
+    # to what's under test here (confidence/clarify behavior), so disable memory outright.
+    monkeypatch.setattr(settings, 'ENABLE_CONVERSATION_MEMORY', False)
 
 
 class DummyWhatsApp:
@@ -33,4 +45,4 @@ def test_flow_appends_clarify_when_needed():
     composer = DummyComposerLowNoClarify()
     bf = BotFlow(None, None, wa, composer=composer)
     bf.handle_message("user-11", "How to X?")
-    assert any("i don't have enough information" in (m or "").lower() for _, m in wa.sent)
+    assert any("quite enough information" in (m or "").lower() for _, m in wa.sent)

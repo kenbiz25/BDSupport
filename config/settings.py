@@ -112,21 +112,24 @@ class Settings:
     SAFEGUARD_ENABLE = _to_bool(os.getenv("SAFEGUARD_ENABLE"), True)
 
     # ==================== Support Contacts ====================
-    SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@comemr.com")
-    SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "+1-555-COMEMR")
-    SUPPORT_DOCS_URL = os.getenv("SUPPORT_DOCS_URL", "https://docs.comemr.com")
+    SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@spice.com")
+    SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "+1-555-SPICE")
+    SUPPORT_DOCS_URL = os.getenv("SUPPORT_DOCS_URL", "https://docs.spice.com")
 
     FALLBACK_MESSAGE = os.getenv(
         "FALLBACK_MESSAGE",
-        "I don't have quite enough information to answer that confidently. Please contact ComEMR Support."
+        "I don't have quite enough information to answer that confidently. Please contact SPICE Support."
     )
 
     # ==================== NLP / STT / Language Support ====================
     ENABLE_STT = _to_bool(os.getenv("ENABLE_STT"), True)
-    WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
+    # Model used for WhatsApp voice-note transcription (supports Bangla natively)
+    TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gpt-4o-transcribe")
 
-    # Krio → English normalization
-    KRIO_TRANSLATION = _to_bool(os.getenv("KRIO_TRANSLATION"), True)
+    # Bangla (Banglish) → English normalization, applied before RAG retrieval
+    # since the KB is English-language.
+    BANGLA_TRANSLATION = _to_bool(os.getenv("BANGLA_TRANSLATION"), True)
+    BANGLA_NORMALIZE_AGGRESSIVE = _to_bool(os.getenv("BANGLA_NORMALIZE_AGGRESSIVE"), True)
 
     # ==================== Rate Limiting ====================
     MAX_CONCURRENT_REQUESTS = _to_int(os.getenv("MAX_CONCURRENT_REQUESTS"), 10)

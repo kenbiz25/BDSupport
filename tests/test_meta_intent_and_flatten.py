@@ -19,7 +19,13 @@ def test_flatten_short_numbered_list():
     assert 'Yes' in out
 
 
-def test_handle_message_session_passes_session_id():
+def test_handle_message_session_passes_session_id(monkeypatch):
+    from config.settings import settings
+    # Fixed session id ('+100') against the real (non-tmp) ConversationMemory directory
+    # — disable memory outright so the first-touch menu can't intercept based on
+    # accumulated history from other test runs. Persistence isn't under test here.
+    monkeypatch.setattr(settings, 'ENABLE_CONVERSATION_MEMORY', False)
+
     composer_calls = {}
     class DummyComposer:
         def answer(self, query, language=None, session_id=None, **kwargs):

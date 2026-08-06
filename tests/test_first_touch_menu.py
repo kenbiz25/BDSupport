@@ -86,9 +86,9 @@ def test_menu_selection_response(tmp_path, monkeypatch):
     from core.memory.memory_service import ConversationMemory
     mem = ConversationMemory()
     menu_text = (
-        "Welcome to ComEMR Support! Please choose an option below:\n"
+        "Welcome to SPICE Support! Please choose an option below:\n"
         "1. Report a System Issue\n   App not working, login errors, sync issues\n"
-        "2. Get Help Using ComEMR\n   How to register patients, submit reports, use features\n"
+        "2. Get Help Using SPICE\n   How to register patients, submit reports, use features\n"
         "3. Check System Status\n   Downtime, known issues, maintenance updates\n"
         "4. Request a Feature or Improvement\n   Suggest changes or new functionality\n"
         "5. Training & User Guides\n   Manuals, videos, onboarding support"

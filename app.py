@@ -1,5 +1,5 @@
 # ============================================================
-# ComEMR Support – Production App Entrypoint
+# SPICE Support – Production App Entrypoint
 # ============================================================
 
 # --- Fix for Windows / uvicorn module import issues ---
@@ -27,6 +27,7 @@ from fastapi import (
     File,
     Request,
     Body,
+    BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -49,10 +50,10 @@ from config.settings import settings
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ComEMR")
+logger = logging.getLogger("SPICE")
 
 # --- Initialize FastAPI ---
-app = FastAPI(title="ComEMR Support", version="1.4.0")
+app = FastAPI(title="SPICE Support", version="1.4.0")
 
 # --- CORS ---
 if getattr(settings, "ALLOWED_ORIGINS", None):
@@ -94,13 +95,14 @@ app.state.bot = bot
 # WhatsApp Media Helpers
 # ============================================================
 
-async def _download_whatsapp_media(media_id: str) -> Tuple[bytes, str]:
+def _download_whatsapp_media(media_id: str) -> Tuple[bytes, str]:
+    # Sync on purpose: called from the background task thread, not the event loop.
     token = os.getenv("META_WHATSAPP_TOKEN", "")
     api_ver = os.getenv("WHATSAPP_API_VERSION", "v22.0")
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        meta = await client.get(
+    with httpx.Client(timeout=60) as client:
+        meta = client.get(
             f"https://graph.facebook.com/{api_ver}/{media_id}",
             headers=headers,
         )
@@ -109,7 +111,7 @@ async def _download_whatsapp_media(media_id: str) -> Tuple[bytes, str]:
         media_url = mjson.get("url")
         mime_type = mjson.get("mime_type") or "application/octet-stream"
 
-        blob = await client.get(media_url, headers=headers)
+        blob = client.get(media_url, headers=headers)
         blob.raise_for_status()
         return blob.content, mime_type
 
@@ -181,9 +183,59 @@ async def whatsapp_webhook_verify(request: Request):
 # WhatsApp Webhook (POST)
 # ============================================================
 
+def _process_incoming_message(msg: dict, from_: str):
+    """Runs off the request/response cycle (FastAPI executes sync background tasks in a
+    thread pool), so one user's slow voice transcription or LLM call never blocks other
+    users' webhook requests from being accepted.
+    """
+    try:
+        msg_type = msg.get("type")
+
+        # ---- TEXT / INTERACTIVE ----
+        body = (
+            (msg.get("text") or {}).get("body")
+            or (msg.get("interactive") or {}).get("button_reply", {}).get("title")
+            or (msg.get("interactive") or {}).get("list_reply", {}).get("title")
+            or (msg.get("button") or {}).get("text")
+        )
+
+        # ---- AUDIO ----
+        if not body and msg_type == "audio":
+            media_id = (msg.get("audio") or {}).get("id")
+            if media_id:
+                audio_bytes, mime = _download_whatsapp_media(media_id)
+                ext = _guess_ext_from_mime(mime, ".ogg")
+                from adapters.llm.openai_client import whisper_transcribe
+                body = whisper_transcribe(audio_bytes, filename=f"voice{ext}")
+
+        # ---- IMAGE / SCREENSHOT ----
+        if not body and msg_type == "image":
+            media_id = (msg.get("image") or {}).get("id")
+            if media_id:
+                img_bytes, mime = _download_whatsapp_media(media_id)
+                from adapters.llm.openai_client import analyze_image
+                body = analyze_image(img_bytes, mime)
+
+        if not from_ or not body:
+            return
+
+        # ✅ CRITICAL: Do NOT mutate user text
+        handler_bot = getattr(app.state, "bot", None) or bot
+
+        handler_bot.handle_message(
+            user_id=from_,
+            message=body,
+            session_id=from_,  # ✅ stable session key
+        )
+
+    except Exception:
+        logger.exception("Background WhatsApp message processing failed | from=%s", from_)
+
+
 @app.post("/whatsapp/webhook", tags=["WhatsApp Gateway"])
 async def whatsapp_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     from_: str = Query(None, alias="from"),
     payload: dict = Body(None),
 ):
@@ -207,47 +259,16 @@ async def whatsapp_webhook(
         if not msg:
             return JSONResponse(content={"status": "acknowledged"})
 
-        msg_type = msg.get("type")
         from_ = from_ or msg.get("from")
+        logger.info("Incoming WhatsApp message | type=%s from=%s", msg.get("type"), from_)
 
-        logger.info("Incoming WhatsApp message | type=%s from=%s", msg_type, from_)
-
-        # ---- TEXT / INTERACTIVE ----
-        body = (
-            (msg.get("text") or {}).get("body")
-            or (msg.get("interactive") or {}).get("button_reply", {}).get("title")
-            or (msg.get("interactive") or {}).get("list_reply", {}).get("title")
-            or (msg.get("button") or {}).get("text")
-        )
-
-        # ---- AUDIO ----
-        if not body and msg_type == "audio":
-            media_id = (msg.get("audio") or {}).get("id")
-            if media_id:
-                audio_bytes, mime = await _download_whatsapp_media(media_id)
-                ext = _guess_ext_from_mime(mime, ".ogg")
-                from adapters.llm.openai_client import whisper_transcribe
-                body = whisper_transcribe(audio_bytes, filename=f"voice{ext}")
-
-        # ---- IMAGE / SCREENSHOT ----
-        if not body and msg_type == "image":
-            media_id = (msg.get("image") or {}).get("id")
-            if media_id:
-                img_bytes, mime = await _download_whatsapp_media(media_id)
-                from adapters.llm.openai_client import analyze_image
-                body = analyze_image(img_bytes, mime)
-
-        if not from_ or not body:
+        if not from_:
             return JSONResponse(content={"status": "acknowledged"})
 
-        # ✅ CRITICAL: Do NOT mutate user text
-        handler_bot = getattr(request.app.state, "bot", None) or bot
-
-        handler_bot.handle_message(
-            user_id=from_,
-            message=body,
-            session_id=from_,  # ✅ stable session key
-        )
+        # Respond to WhatsApp immediately; transcription/RAG/LLM work happens in the
+        # background so this endpoint stays fast under concurrent load and WhatsApp
+        # never times out waiting on a slow voice-note transcription.
+        background_tasks.add_task(_process_incoming_message, msg, from_)
 
         return JSONResponse(content={"ok": True})
 

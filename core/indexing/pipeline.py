@@ -250,12 +250,7 @@ class IndexingPipeline:
         # 3) Upsert into FAISS
         self._store_embeddings(prepared_chunks, embeddings)
 
-        # (Optional) persist index to disk if your FaissStore supports saving
-        try:
-            # e.g., self.store.save(f"faiss_{self.namespace}.index")
-            pass
-        except Exception:
-            pass
+        self.store.save()
 
         print(f"[Indexing] Completed. Total chunks upserted: {len(prepared_chunks)}")
         return len(prepared_chunks)

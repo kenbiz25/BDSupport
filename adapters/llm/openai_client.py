@@ -56,21 +56,31 @@ def _with_backoff(
 
 
 # ============================================================
-# Language Detection + Krio Normalization (for RAG + analytics)
+# Language Detection + Banglish Normalization (for RAG + analytics)
 # ============================================================
 
 _WORD_RE = re.compile(r"\b[\w']+\b", re.UNICODE)
+_BENGALI_CHAR_RE = re.compile(r"[ঀ-৿]")
 
 
 def detect_language(text: str) -> Tuple[str, float]:
     """
-    Lightweight language detection using scoring + negative signals.
-    Returns: (lang_label, confidence) — 'en', 'krio', 'sw', 'unknown'
-    NOTE: Detection is used for analytics + pre-RAG normalization ONLY.
-          It MUST NOT change the bot's output language (English-only).
+    Lightweight language detection for English vs. Bangla (Bengali).
+    Returns: (lang_label, confidence) — 'en', 'bn', 'unknown'
+
+    Native Bengali script is detected directly via Unicode range (reliable,
+    works well on voice-transcribed text). Romanized Bangla ("Banglish"),
+    common on WhatsApp, is detected via a weighted word/bigram list.
     """
-    if not text or len(text.strip()) < 6:
+    if not text or len(text.strip()) < 3:
         return "unknown", 0.0
+
+    # Native Bengali script is an unambiguous signal — check this first.
+    letters = re.findall(r"[^\s\d\W]", text, re.UNICODE)
+    if letters:
+        bengali_ratio = len(_BENGALI_CHAR_RE.findall(text)) / len(letters)
+        if bengali_ratio > 0.3:
+            return "bn", min(0.75 + bengali_ratio * 0.25, 0.99)
 
     t = text.lower()
     words = _WORD_RE.findall(t)
@@ -79,67 +89,58 @@ def detect_language(text: str) -> Tuple[str, float]:
 
     bigrams = [f"{words[i]} {words[i+1]}" for i in range(len(words) - 1)]
 
-    # Krio positive signals (weighted words + some bigrams)
-    # Keep short tokens ('na', 'fo') but ONLY match via word/bigram lists to avoid substring false positives.
-    krio_pos = Counter({
-        "wetin": 12, "nor": 8, "dey": 10, "sabi": 9, "pikin": 7, "una": 6,
-        "tori": 5, "na": 8, "fo": 6, "leh": 5, "wey": 7, "sef": 5, "mek": 6,
-        "na so": 4, "wetin be": 5, "for na": 3, "how far": 4,
+    # Banglish (romanized Bangla) positive signals.
+    banglish_pos = Counter({
+        "ki": 8, "ache": 9, "acho": 8, "achi": 8, "ami": 9, "tumi": 9,
+        "apni": 8, "kemon": 9, "keno": 8, "kobe": 6, "kothay": 8,
+        "hobe": 7, "hoise": 7, "korbo": 7, "korte": 6, "korchi": 7,
+        "bhalo": 8, "lagbe": 7, "lagche": 7, "pare": 5, "parbo": 6,
+        "na": 5, "amar": 8, "tomar": 8, "onk": 5, "onek": 6, "kivabe": 8,
+        "kemon acho": 6, "ki hoise": 6, "kivabe korbo": 5,
     })
 
-    # English strong function words (negative signal for Krio)
+    # English strong function words (negative signal for Banglish).
     en_strong = {
         "the": 15, "and": 12, "is": 10, "are": 9, "that": 8, "with": 7,
         "they": 6, "this": 6, "have": 5, "for": 5, "you": 5,
     }
-
-    # Swahili (simple)
-    sw_pos = Counter({
-        "habari": 10, "asante": 9, "sawa": 8, "tafadhali": 7, "nisaidie": 6,
-        "vipi": 6, "kwanini": 5, "je": 4,
-    })
 
     def score(counter: Counter) -> float:
         s = sum(counter.get(w, 0) for w in words)
         s += sum(counter.get(bg, 0) for bg in bigrams)
         return s / max(1.0, (len(words) ** 0.6))  # mild length normalization
 
-    krio_score = score(krio_pos)
-    sw_score = score(sw_pos)
+    banglish_score = score(banglish_pos)
     en_penalty = sum(en_strong.get(w, 0) for w in words) / max(1, len(words))
 
-    # Decision thresholds
-    if krio_score > 3.5 and krio_score > sw_score * 1.6 and krio_score > en_penalty * 0.9:
-        conf = min(0.70 + 0.09 * krio_score, 0.96)
-        return "krio", conf
+    if banglish_score > 3.5 and banglish_score > en_penalty * 0.9:
+        conf = min(0.65 + 0.09 * banglish_score, 0.93)
+        return "bn", conf
 
-    if sw_score > 4.0 and sw_score > krio_score * 1.6:
-        conf = min(0.70 + 0.11 * sw_score, 0.95)
-        return "sw", conf
-
-    if len(words) > 4 and en_penalty > 2.5 and krio_score < 3.8:
+    if len(words) > 4 and en_penalty > 2.5 and banglish_score < 3.0:
         conf = min(0.68 + 0.07 * en_penalty, 0.94)
         return "en", conf
 
     # Fallback: word-boundary hits only (avoid substring matching)
-    krio_hits = 0
-    for k in krio_pos.keys():
+    banglish_hits = 0
+    for k in banglish_pos.keys():
         if " " in k:
             if k in bigrams:
-                krio_hits += 1
+                banglish_hits += 1
         else:
             if k in words:
-                krio_hits += 1
+                banglish_hits += 1
 
-    if krio_hits >= 2:
-        return "krio", min(0.62 + 0.08 * krio_hits, 0.90)
+    if banglish_hits >= 2:
+        return "bn", min(0.60 + 0.08 * banglish_hits, 0.88)
 
     return "unknown", 0.40
 
 
-def normalize_krio(text: str, aggressive: bool = True) -> str:
+def normalize_banglish(text: str, aggressive: bool = True) -> str:
     """
-    Normalize common Krio tokens to improve retrieval/semantic matching.
+    Normalize common romanized-Bangla (Banglish) tokens to English to improve
+    retrieval/semantic matching against an English-language KB.
     Aggressive mode applies more replacements; non-aggressive keeps original.
     """
     if not text:
@@ -149,17 +150,28 @@ def normalize_krio(text: str, aggressive: bool = True) -> str:
         return text
 
     replacements = {
-        "wetin": "what",
-        "nor": "not",
-        "dey": "is",
-        "sabi": "know",
-        "pikin": "child",
-        "una": "you all",
-        "tori": "story",
-        "wey": "that",
-        "sef": "also",
-        "mek": "make",
-        "leh": "let",
+        "ki": "what",
+        "keno": "why",
+        "kothay": "where",
+        "kemon": "how",
+        "kobe": "when",
+        "ache": "have",
+        "acho": "have",
+        "achi": "have",
+        "ami": "i",
+        "tumi": "you",
+        "apni": "you",
+        "amar": "my",
+        "tomar": "your",
+        "hobe": "will be",
+        "hoise": "happened",
+        "korbo": "will do",
+        "korte": "to do",
+        "korchi": "doing",
+        "bhalo": "good",
+        "lagbe": "need",
+        "lagche": "feeling",
+        "na": "not",
     }
 
     parts = text.split()
@@ -177,14 +189,14 @@ def prepare_for_rag(user_text: str) -> Dict[str, Any]:
     """
     Pre-RAG processing pipeline:
     - Detect language (analytics + behavior)
-    - If Krio, normalize before retrieval (configurable)
+    - If Bangla, normalize before retrieval (configurable)
     """
     lang, conf = detect_language(user_text)
     rag_text = user_text
 
-    aggressive_norm = getattr(settings, "KRIO_NORMALIZE_AGGRESSIVE", True)
-    if lang == "krio":
-        rag_text = normalize_krio(user_text, aggressive=aggressive_norm)
+    aggressive_norm = getattr(settings, "BANGLA_NORMALIZE_AGGRESSIVE", True)
+    if lang == "bn":
+        rag_text = normalize_banglish(user_text, aggressive=aggressive_norm)
 
     return {
         "original": user_text,
@@ -232,6 +244,7 @@ def chat_complete(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     system_prompt: Optional[str] = None,
+    language: Optional[str] = None,
 ) -> str:
     """
     Backward-compatible: returns ONLY the assistant content string.
@@ -243,6 +256,7 @@ def chat_complete(
         temperature=temperature,
         max_tokens=max_tokens,
         system_prompt=system_prompt,
+        language=language,
     )
     return content if ok else ""
 
@@ -254,9 +268,11 @@ def chat_complete_safe(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     system_prompt: Optional[str] = None,
+    language: Optional[str] = None,
 ) -> Tuple[str, bool, str]:
     """
     Returns: (content, success, error_message)
+    language: 'bn' replies fully in Bangla (Bengali script); anything else stays English-only.
     """
     client = get_openai()
 
@@ -270,12 +286,21 @@ def chat_complete_safe(
     use_temp = getattr(settings, "LLM_TEMPERATURE", 0.3) if temperature is None else temperature
     use_max_tokens = getattr(settings, "LLM_MAX_TOKENS", 350) if max_tokens is None else max_tokens
 
-    enforced = (
-        "You are a helpful, concise, and friendly assistant.\n"
-        "IMPORTANT: Always respond in clear, natural English only.\n"
-        "Never respond in any other language, even if the user writes in another language.\n"
-        "Do NOT add any language detection or language switching messages.\n"
-    )
+    if language == "bn":
+        enforced = (
+            "You are a helpful, concise, and friendly assistant.\n"
+            "IMPORTANT: Respond fully in natural, simple Bangla (Bengali script).\n"
+            "Use plain, everyday Bangla suitable for low-literacy users — short sentences, no jargon. "
+            "You may keep app names, error codes, or terms with no simple Bangla equivalent in English.\n"
+            "Do NOT add any language detection or language switching messages.\n"
+        )
+    else:
+        enforced = (
+            "You are a helpful, concise, and friendly assistant.\n"
+            "IMPORTANT: Always respond in clear, natural English only.\n"
+            "Never respond in any other language, even if the user writes in another language.\n"
+            "Do NOT add any language detection or language switching messages.\n"
+        )
 
     if system_prompt:
         enforced += "\n" + system_prompt
@@ -350,8 +375,8 @@ def whisper_transcribe_safe(
         prompt
         or getattr(settings, "TRANSCRIBE_PROMPT", None)
         or (
-            "The speaker may use English, Krio, or a mix of both. "
-            "Transcribe exactly what is spoken. "
+            "The speaker may use English, Bangla (Bengali), or a mix of both (code-switching). "
+            "Transcribe exactly what is spoken. If spoken in Bangla, write it in Bangla (Bengali) script, not romanized. "
             "If there are long pauses or silence, do not generate filler or repetitive text. "
             "Do not translate. Do not correct grammar."
         )

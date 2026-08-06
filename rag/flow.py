@@ -29,7 +29,7 @@ class BotFlow:
     - optionally spell-corrects user messages
     - uses RagComposer (RAG + LLM) to respond
     - uses ConversationMemory markers to avoid repeated menus and repeated follow-ups
-    - supports Krio only when user explicitly requests it
+    - replies in Bangla (Bengali) when the user writes in Bangla or explicitly requests it, English otherwise
     """
 
     def __init__(
@@ -168,14 +168,19 @@ class BotFlow:
 
         return text
 
-    def _detect_krio(self, text: str) -> bool:
-        """Enable Krio only when user explicitly asks for it."""
+    def _detect_bangla(self, text: str) -> bool:
+        """Reply in Bangla if the user writes in Bangla/Bengali, or explicitly asks for it."""
         if not text:
             return False
         t = text.lower()
-        return bool(
-            "krio" in t or "speak krio" in t or "in krio" in t or t.strip().startswith("krio:")
-        )
+        if "bangla" in t or "bengali" in t or t.strip().startswith(("bangla:", "bengali:")):
+            return True
+        try:
+            from adapters.llm.openai_client import detect_language
+            lang, conf = detect_language(text)
+            return lang == "bn" and conf >= 0.6
+        except Exception:
+            return False
 
     def _is_short_ack(self, text: str) -> bool:
         """Short acknowledgements that should not trigger follow-ups."""
@@ -254,15 +259,18 @@ class BotFlow:
     def handle_message(self, user_id: str, message: str, session_id: Optional[str] = None):
         """Main entrypoint called by the webhook to handle and respond to a message."""
         raw = message or ""
-        cleaned = self.preprocess(raw)
+
+        use_bangla = self._detect_bangla(raw)
+        language = "bn" if use_bangla else "en"
+
+        # The spellchecker only knows English — running it on Bangla/Banglish text
+        # would corrupt real words, so skip correction for Bangla input.
+        cleaned = raw if use_bangla else self.preprocess(raw)
 
         # ✅ Critical: if session_id not provided, default it to user_id (stable per WhatsApp user)
         # This prevents "memory never works" situations.
         if not session_id:
             session_id = user_id
-
-        use_krio = self._detect_krio(raw)
-        language = "krio" if use_krio else "en"
 
         # --- Memory: always save the user’s message (best-effort) ---
         mem = None
@@ -300,8 +308,9 @@ class BotFlow:
                 if ticket_pending:
                     if self._is_ticket_yes(cleaned):
                         issue = self._extract_pending_issue(recent)
+                        conversation_summary = mem.summarize(session_id) if mem else ""
                         from core.tickets.ticket_manager import create_ticket
-                        ticket_id = create_ticket(user_id, issue)
+                        ticket_id = create_ticket(user_id, issue, conversation_summary)
                         mem.save_message(session_id, "system", "ticket_created")
                         if ticket_id:
                             outgoing = (

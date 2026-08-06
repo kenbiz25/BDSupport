@@ -39,6 +39,11 @@ def test_flow_saves_messages(tmp_path, monkeypatch):
     # arrange
     # monkeypatch ConversationMemory to write into tmp_path
     from core.memory import memory_service
+    from config.settings import settings
+
+    # First-touch menu would otherwise intercept this (unseen-session) message before
+    # the composer is ever called — this test is about message persistence, not the menu.
+    monkeypatch.setattr(settings, 'ENABLE_FIRST_TOUCH_MENU', False)
 
     orig_init = memory_service.ConversationMemory.__init__
 

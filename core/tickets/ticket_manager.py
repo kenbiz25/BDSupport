@@ -21,7 +21,7 @@ except ImportError:
     openpyxl = None  # type: ignore
     _OPENPYXL_AVAILABLE = False
 
-_HEADERS = ["Ticket ID", "Phone Number", "Issue", "Status", "Created At"]
+_HEADERS = ["Ticket ID", "Phone Number", "Issue", "Conversation Summary", "Status", "Created At"]
 
 
 def _ticket_path() -> Path:
@@ -42,12 +42,13 @@ def _init_workbook(path: Path) -> None:
     ws.column_dimensions["A"].width = 16
     ws.column_dimensions["B"].width = 18
     ws.column_dimensions["C"].width = 60
-    ws.column_dimensions["D"].width = 10
-    ws.column_dimensions["E"].width = 20
+    ws.column_dimensions["D"].width = 80
+    ws.column_dimensions["E"].width = 10
+    ws.column_dimensions["F"].width = 20
     wb.save(str(path))
 
 
-def create_ticket(phone_number: str, issue: str, status: str = "Open") -> Optional[str]:
+def create_ticket(phone_number: str, issue: str, conversation_summary: str = "", status: str = "Open") -> Optional[str]:
     """
     Append a new ticket row to the Excel file and return the ticket ID.
     Returns None if openpyxl is not installed or write fails.
@@ -65,7 +66,7 @@ def create_ticket(phone_number: str, issue: str, status: str = "Open") -> Option
 
         wb = openpyxl.load_workbook(str(path))
         ws = wb["Tickets"]
-        ws.append([ticket_id, phone_number, issue[:500], status, created_at])
+        ws.append([ticket_id, phone_number, issue[:500], conversation_summary[:2000], status, created_at])
         wb.save(str(path))
 
         logger.info("Ticket created | id=%s phone=%s", ticket_id, phone_number)

@@ -23,6 +23,11 @@ class DummyComposerHigh:
 
 def test_handoff_when_options_exhausted(tmp_path, monkeypatch):
     from core.memory import memory_service
+    from config.settings import settings
+
+    # First-touch menu would otherwise intercept this (unseen-session) message before
+    # the handoff logic ever runs — this test is about handoff, not the menu.
+    monkeypatch.setattr(settings, 'ENABLE_FIRST_TOUCH_MENU', False)
 
     # use tmp sessions dir
     orig_init = memory_service.ConversationMemory.__init__
@@ -45,7 +50,9 @@ def test_handoff_when_options_exhausted(tmp_path, monkeypatch):
 
     out, meta = bf.handle_message("+100", "talk to support", session_id=session_id)
     assert meta.get('handoff') is True
-    assert 'connecting you to a support agent' in out.lower()
+    # With ticketing enabled (the current default), handoff offers to create a support
+    # ticket rather than announcing a live-agent connection.
+    assert 'create a support ticket' in out.lower()
 
 
 def test_no_handoff_if_not_exhausted(tmp_path, monkeypatch):
