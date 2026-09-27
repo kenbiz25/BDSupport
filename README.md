@@ -35,8 +35,8 @@ requirements.txt     # Dependencies
 
 ### 1. Clone the Repo
 ```bash
-git clone https://github.com/kenbiz25/ComEMRSupport
-cd ComEMRSupport
+git clone https://github.com/kenbiz25/BDSupport
+cd BDSupport
 ```
 
 ### 2. Create Virtual Environment
